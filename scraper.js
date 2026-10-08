@@ -45,18 +45,24 @@ const get = async (url, ms = 30000) => {
   }
 };
 
-export const uploadToImgbb = (imageUrl) =>
-  cached(`img:${imageUrl}`, async () => {
-    if (!imageUrl) return imageUrl;
-    try {
+export const uploadToImgbb = async (imageUrl) => {
+  if (!imageUrl) return { url: imageUrl, error: 'no image url' };
+  try {
+    const url = await cached(`img:${imageUrl}`, async () => {
       const img = await axios.get(imageUrl, {
         responseType: 'arraybuffer',
         timeout: 20000,
-        headers: { Referer: SITE },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+          Referer: SITE,
+        },
       });
 
+      const type = (img.headers['content-type'] || 'image/jpeg').split(';')[0];
+      const ext = type.split('/')[1] || 'jpg';
+
       let data = new FormData();
-      data.append('source', Buffer.from(img.data), { filename: `image-${Date.now()}.jpg` });
+      data.append('source', Buffer.from(img.data), { filename: `image-${Date.now()}.${ext}`, contentType: type });
       data.append('type', 'file');
       data.append('action', 'upload');
 
@@ -75,12 +81,16 @@ export const uploadToImgbb = (imageUrl) =>
       };
 
       const { data: response } = await axios.request(config);
+      if (!response?.image?.url) throw new Error('no url: ' + JSON.stringify(response).slice(0, 150));
       return response.image.url;
-    } catch (e) {
-      console.error('[imgbb]', e.message);
-      return imageUrl;
-    }
-  });
+    });
+    return { url };
+  } catch (e) {
+    const status = e.response?.status ? `HTTP ${e.response.status} ` : '';
+    console.error('[imgbb]', status + e.message);
+    return { url: imageUrl, error: status + e.message };
+  }
+};
 
 const extractUrl = (value) => {
   if (!value) return null;
