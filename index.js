@@ -16,20 +16,21 @@ app.use((_req, res, next) => {
 app.get(['/', '/api'], async (req, res) => {
   const q = (req.query.q || '').toString().trim();
   if (!q) {
-    return res.status(400).json({ ok: false, error: 'q مطلوب', example: '/api?q=Spotify' });
+    return res.status(400).json({ ok: false, error: 'api+q', example: '/api?q=Spotify' });
   }
 
   try {
     const results = await searchTraid(q);
 
     const items = await mapLimit(results, CONCURRENCY, async (item) => {
-      const [d, image] = await Promise.all([
+      const [d, img] = await Promise.all([
         getAppDetails(item.link),
         uploadToImgbb(item.image),
       ]);
       return {
         title: d.title || item.title,
-        image,
+        image: img.url,
+        ...(img.error && { imageError: img.error }),
         genre: d.genre || item.genre,
         version: d.version,
         size: d.size,
