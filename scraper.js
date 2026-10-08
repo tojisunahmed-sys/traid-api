@@ -1,11 +1,12 @@
 import * as cheerio from 'cheerio';
+import axios from 'axios';
+import FormData from 'form-data';
 
 export const SITE = 'https://traidmodz.org';
 const APK_REGEX = /https?:\/\/s\d+\.tmdownload\.com\/[^"'<> \n\r]+\.apk/i;
 
-// ---------- cache بسيط في الذاكرة ----------
 const cache = new Map();
-const TTL = 10 * 60 * 1000; // 10 دقايق
+const TTL = 10 * 60 * 1000;
 
 const cached = async (key, fn) => {
   const hit = cache.get(key);
@@ -16,7 +17,6 @@ const cached = async (key, fn) => {
   return v;
 };
 
-// ---------- حماية: بس روابط الموقع ----------
 export const isValidAppUrl = (u) => {
   try {
     const x = new URL(u);
@@ -26,7 +26,6 @@ export const isValidAppUrl = (u) => {
   }
 };
 
-// ---------- fetch ----------
 const get = async (url, ms = 30000) => {
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), ms);
@@ -46,7 +45,43 @@ const get = async (url, ms = 30000) => {
   }
 };
 
-// ---------- استخراج رابط التحميل المباشر ----------
+export const uploadToImgbb = (imageUrl) =>
+  cached(`img:${imageUrl}`, async () => {
+    if (!imageUrl) return imageUrl;
+    try {
+      const img = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 20000,
+        headers: { Referer: SITE },
+      });
+
+      let data = new FormData();
+      data.append('source', Buffer.from(img.data), { filename: `image-${Date.now()}.jpg` });
+      data.append('type', 'file');
+      data.append('action', 'upload');
+
+      let config = {
+        method: 'POST',
+        url: 'https://imgbb.com/json',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+          'Referer': 'https://imgbb.com/',
+          'Origin': 'https://imgbb.com',
+          ...data.getHeaders()
+        },
+        data: data,
+        timeout: 30000
+      };
+
+      const { data: response } = await axios.request(config);
+      return response.image.url;
+    } catch (e) {
+      console.error('[imgbb]', e.message);
+      return imageUrl;
+    }
+  });
+
 const extractUrl = (value) => {
   if (!value) return null;
   let decoded = value;
@@ -86,7 +121,6 @@ const findDownloadUrl = ($, html) => {
   return m ? m[0] : null;
 };
 
-// ---------- معلومات التطبيق ----------
 const parseInfo = ($) => {
   const info = {
     title: $('h1.title').text().trim() || 'غير معروف',
@@ -116,9 +150,6 @@ const parseInfo = ($) => {
   return info;
 };
 
-// ---------- الدوال العامة ----------
-
-/** بحث في الموقع */
 export const searchTraid = (query) =>
   cached(`search:${query.toLowerCase()}`, async () => {
     const html = await get(`${SITE}/?s=${encodeURIComponent(query)}`);
@@ -139,7 +170,6 @@ export const searchTraid = (query) =>
     return results;
   });
 
-/** معلومات + رابط تحميل من نفس الطلب (صفحة واحدة بس) */
 export const getAppDetails = (appUrl) =>
   cached(`app:${appUrl}`, async () => {
     const html = await get(appUrl);
@@ -151,7 +181,6 @@ export const getAppDetails = (appUrl) =>
     };
   });
 
-/** تشغيل مهام بالتوازي مع حد أقصى */
 export const mapLimit = async (items, limit, fn) => {
   const out = new Array(items.length);
   let i = 0;
