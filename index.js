@@ -1,9 +1,9 @@
 import express from 'express';
-import { searchTraid, getAppDetails, mapLimit } from './scraper.js';
+import { searchTraid, getAppDetails, uploadToImgbb, mapLimit } from './scraper.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const CONCURRENCY = 4;  // عدد الصفحات اللي تتجاب مع بعض
+const CONCURRENCY = 4;
 
 app.disable('x-powered-by');
 app.set('json spaces', 2);
@@ -13,7 +13,6 @@ app.use((_req, res, next) => {
   next();
 });
 
-// endpoint واحد: /api?q=Spotify
 app.get(['/', '/api'], async (req, res) => {
   const q = (req.query.q || '').toString().trim();
   if (!q) {
@@ -24,10 +23,13 @@ app.get(['/', '/api'], async (req, res) => {
     const results = await searchTraid(q);
 
     const items = await mapLimit(results, CONCURRENCY, async (item) => {
-      const d = await getAppDetails(item.link);
+      const [d, image] = await Promise.all([
+        getAppDetails(item.link),
+        uploadToImgbb(item.image),
+      ]);
       return {
         title: d.title || item.title,
-        image: item.image,
+        image,
         genre: d.genre || item.genre,
         version: d.version,
         size: d.size,
